@@ -10,7 +10,9 @@
 analyzer:
   errors:
     avoid_unnecessary_containers: ignore
+    await_only_futures: ignore
     constant_identifier_names: ignore
+    depend_on_referenced_packages: ignore
     prefer_const_constructors: ignore
     prefer_const_literals_to_create_immutables: ignore
     sized_box_for_whitespace: ignore

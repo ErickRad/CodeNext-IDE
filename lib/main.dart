@@ -1,13 +1,15 @@
 import 'dart:io';
-import 'package:flutter/material.dart';
 import 'package:codenext/properties.dart';
+import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:process_run/shell.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:path/path.dart' as p;
 
 TextEditingController code = TextEditingController();
 TextEditingController terminalOutput = TextEditingController();
+File? file;
+final shell = Shell();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -50,29 +52,35 @@ class Home extends StatefulWidget {
 }
 
 class _HomeState extends State<Home> {
-  String currentFilePath = '';
+  String currentFilePath = "";
 
   @override
   void initState() {
     super.initState();
+    setState(() {
+      terminalOutput.text = "PS $currentFilePath>";
+    });
   }
 
   Future<void> runPythonCode() async {
-    final tempDir = await getTemporaryDirectory();
-    final pythonFile = File('${tempDir.path}/temp_code.py');
-    await pythonFile.writeAsString(code.text);
-
-    final shell = Shell();
+    if (file == null) {
+      setState(() {
+        terminalOutput.text = 'Error: No file selected';
+      });
+      return;
+    } else {
+      saveFile();
+    }
 
     try {
-      var result = await shell.run('python ${pythonFile.path}');
+      var result = await shell.run('python ${file!.path}');
 
       setState(() {
-        terminalOutput.text = result.outText;
+        terminalOutput.text = "PS $currentFilePath> ${result.outText}";
       });
     } catch (e) {
       setState(() {
-        terminalOutput.text = 'Error: $e';
+        terminalOutput.text = "PS $currentFilePath> $e";
       });
     }
   }
@@ -84,11 +92,12 @@ class _HomeState extends State<Home> {
     );
 
     if (result != null) {
-      File file = File(result.files.single.path!);
-      String contents = await file.readAsString();
+      file = File(result.files.single.path!);
+      String contents = await file!.readAsString();
       setState(() {
         code.text = contents;
-        currentFilePath = file.path;
+        currentFilePath = file!.path;
+        terminalOutput.text = "PS $currentFilePath>";
       });
     }
   }
@@ -97,8 +106,8 @@ class _HomeState extends State<Home> {
     if (currentFilePath.isEmpty) {
       await saveFileAs();
     } else {
-      File file = File(currentFilePath);
-      await file.writeAsString(code.text);
+      File fileToSave = File(currentFilePath);
+      await fileToSave.writeAsString(code.text);
     }
   }
 
@@ -111,25 +120,40 @@ class _HomeState extends State<Home> {
     );
 
     if (outputPath != null) {
-      File file = File(outputPath);
-      await file.writeAsString(code.text);
+      file = File(outputPath);
+      await file!.writeAsString(code.text);
       setState(() {
-        currentFilePath = file.path;
+        currentFilePath = file!.path;
       });
     }
   }
 
-  Widget buildDirectoryTree() {
-    // This function is a placeholder for building the directory tree
-    // Implement this based on your specific requirements
-    return Container(
-      color: WIDGETS,
-      child: Column(
-        children: [
-          Text('Directory Tree', style: TextStyle(color: Colors.white)),
-          // Add directory tree structure here
-        ],
-      ),
+  Widget buildDirectoryTree(String rootPath) {
+    Directory rootDir = Directory(rootPath);
+    List<FileSystemEntity> entities = rootDir.listSync();
+
+    return ListView.builder(
+      itemCount: entities.length,
+      itemBuilder: (context, index) {
+        FileSystemEntity entity = entities[index];
+        return ListTile(
+          title: Text(
+            p.basename(entity.path),
+            style: TextStyle(color: Colors.white),
+          ),
+          onTap: () async {
+            if (entity is File) {
+              String contents = await entity.readAsString();
+              setState(() {
+                code.text = contents;
+                file = entity;
+                currentFilePath = entity.path;
+                terminalOutput.text = "PS $currentFilePath>";
+              });
+            }
+          },
+        );
+      },
     );
   }
 
@@ -144,7 +168,7 @@ class _HomeState extends State<Home> {
     return Column(
       children: [
         Container(
-          height: toolBarHeight,
+          height: 40,
           color: WIDGETS,
           padding: EdgeInsets.only(left: 10),
           child: Row(
@@ -157,51 +181,38 @@ class _HomeState extends State<Home> {
                     alignment: Alignment.center,
                     child: Icon(
                       Icons.cookie,
-                      color: Color.fromARGB(255, 209, 112, 209),
+                      color: Colors.purpleAccent,
                       size: 30,
-                    )
+                    ),
                   ),
                   TextButton(
-                    onPressed: openFile, 
-                    child: Text("File",
+                    onPressed: openFile,
+                    child: Text(
+                      "Open",
                       style: TextStyle(
-                        color: Colors.white
+                        color: Colors.white,
                       ),
-                    )
+                    ),
                   ),
                   TextButton(
-                    onPressed: saveFile, 
-                    child: Text("Save",
+                    onPressed: saveFile,
+                    child: Text(
+                      "Save",
                       style: TextStyle(
-                        color: Colors.white
+                        color: Colors.white,
                       ),
-                    )
+                    ),
                   ),
                   TextButton(
-                    onPressed: saveFileAs, 
-                    child: Text("Save As",
+                    onPressed: saveFileAs,
+                    child: Text(
+                      "Save As",
                       style: TextStyle(
-                        color: Colors.white
+                        color: Colors.white,
                       ),
-                    )
+                    ),
                   ),
-                  TextButton(
-                    onPressed: (){}, 
-                    child: Text("View",
-                      style: TextStyle(
-                        color: Colors.white
-                      ),
-                    )
-                  ),
-                  TextButton(
-                    onPressed: (){}, 
-                    child: Text("Terminal",
-                      style: TextStyle(
-                        color: Colors.white
-                      ),
-                    )
-                  ),
-                ]
+                ],
               ),
               Spacer(),
               Row(
@@ -209,29 +220,21 @@ class _HomeState extends State<Home> {
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   IconButton(
-                    onPressed: runPythonCode, 
+                    onPressed: runPythonCode,
                     icon: Icon(
                       Icons.play_arrow,
                       size: 25,
-                      color: Color.fromARGB(255, 65, 206, 47),
-                    )
+                      color: Colors.green,
+                    ),
                   ),
                   IconButton(
-                    onPressed: (){}, 
-                    icon: Icon(
-                      Icons.replay,
-                      size: 20,
-                      color: Color.fromARGB(255, 199, 147, 5),
-                    )
-                  ),      
-                  IconButton(
-                    onPressed: (){}, 
+                    onPressed: runPythonCode,
                     icon: Icon(
                       Icons.stop,
-                      size: 25,
-                      color: Color.fromARGB(255, 184, 19, 19),
-                    )
-                  )   
+                      size: 20,
+                      color: Color.fromARGB(255, 180, 14, 14),
+                    ),
+                  ),
                 ],
               ),
             ],
@@ -246,11 +249,11 @@ class _HomeState extends State<Home> {
               children: [
                 Expanded(
                   flex: 1,
-                  child: buildDirectoryTree(),
+                  child: buildDirectoryTree(Directory.current.path),
                 ),
                 Container(
                   width: 6,
-                  color: DIVISORS
+                  color: Colors.grey[700],
                 ),
                 Expanded(
                   flex: 8,
@@ -265,17 +268,15 @@ class _HomeState extends State<Home> {
                             autocorrect: false,
                             maxLines: null,
                             cursorHeight: 20,
-                            style: TextStyle(
-                              color: Colors.white
-                            ),
+                            style: TextStyle(color: Colors.white),
                             decoration: InputDecoration(
                               border: InputBorder.none,
                             ),
-                          )
-                        )
-                      )
+                          ),
+                        ),
+                      ),
                     ],
-                  )
+                  ),
                 ),
               ],
             ),
@@ -283,7 +284,7 @@ class _HomeState extends State<Home> {
         ),
         Container(
           height: 6,
-          color: DIVISORS,
+          color: Color.fromARGB(255, 50, 50, 50),
         ),
         Container(
           height: 200,
@@ -291,7 +292,7 @@ class _HomeState extends State<Home> {
           child: SingleChildScrollView(
             child: TextField(
               controller: terminalOutput,
-              readOnly: true,
+              readOnly: false,
               maxLines: null,
               style: TextStyle(color: Colors.white),
               decoration: InputDecoration(
